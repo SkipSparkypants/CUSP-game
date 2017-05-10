@@ -1,0 +1,941 @@
+	.EQU KBD_CNTL,  	$000
+          	.EQU KBD_STAT,  	$000
+          	.EQU KBD_DATA,  	$001
+          	.EQU KBD_FLUSH, 	$40
+          	.EQU TIM_CNTL,      	$030
+          	.EQU TIM_STAT,      	$030
+          	.EQU TIM_VALUE,     	$031
+          	.EQU TIM_COUNT,     	$034
+        	.EQU INTERRUPT_ENA,           $80
+          	.EQU RESET_READY_BIT,         $40
+          	.EQU START_AFTER_LOAD,        $10
+          	.EQU ENABLE_RESET_AND_START,  $D0
+          	.EQU ENABLE_AND_RESET,        $C0
+
+          	.EQU CRT_BUFFER,    	$100
+          	.EQU BOTTOM_RIGHT,  	$313
+          	.EQU CRT_XREG,      	$314
+	.EQU CRT_YREG,      	$315
+          	.EQU CRT_CNTL,      	$316
+          	.EQU CRT_DATA,      	$317
+	.EQU CRT_ROWS,      	14
+          	.EQU CRT_COLS,      	38
+          	.EQU CLEAR_DISPLAY, 	$01
+	.EQU HOME,	$04
+
+          	.EQU PUT_NUM,       	$E00      
+          	.EQU GET_NUM,       	$E01
+	.EQU GET_STR,	$E04
+          	.EQU PUT_STR,       	$E05
+          	.EQU PUT_NL,        	$E06
+          	.EQU PUT_NUM2,      	$E07
+          	.EQU PUT_CHR,       	$E08
+
+	.EQU  BELL, 	$07
+	.equ	up_arrow,	'H'
+	.equ	down_arrow,	'P'
+	.equ	left_arrow,	'K'
+	.equ	right_arrow,	'M'
+	.equ	top, 	0
+	.equ	bottom,	13
+	.equ	max_right,	37
+	.equ	min_right,	1
+	.equ	left,	4
+	.equ	right,	5
+	.equ	max_paddle_x,	33
+	.equ	quit,	'x'
+	.equ	start,	' '
+	.equ	nokey,	'n'
+	.equ	vertical_line,	'|'
+	.equ	horizontal_line,	'-'
+	.equ	ball_chr,	'O'
+	.equ	move_ball, 	2
+	.equ	death_delay,	3
+	.equ	start_cnt,	1	
+;(main)
+	lds#	$e00
+	cie
+	lda#	$06
+	outb crt_cntl
+	lda#	3
+	sta	lives
+	clr	score
+	jsr	showIntro
+	psh#	ballX
+	psh#	ballY
+	psh#	paddleX
+	psh#	deltaX
+	psh#	deltaY
+	psh#	score
+	jsr	startGame
+	ads#	6
+	lda#	keyISR
+	sta	$ff8
+	lda#	enable_and_reset
+	outb	kbd_cntl
+	lda#	1000
+	outw	tim_value
+	lda#	timerISR
+	sta	$ffb
+	lda#	enable_reset_and_start
+	outb	tim_cntl
+	sie
+mainloop:	nop
+	jmp	mainloop
+;putChar
+	.equ	putCharX, 5
+	.equ	putCharY, 4
+	.equ	putCharC, 3
+	.equ	putCharTemp, 0
+
+putChar:	bgn#	1
+	psha
+	lda !	putCharY
+	mul#	38
+	ada !	putCharX
+	ada#	CRT_BUFFER
+	sta !	putCharTemp
+	lda !	putCharC
+	outb* !putCharTemp
+	lda# 0
+	outb crt_xreg
+	lda# 0
+	outb crt_yreg
+	popa
+	fin#	1
+	rtn
+
+;void showScore(int* score, int* lives)
+	.equ	showSc,4
+	.equ	showLives,3
+	.equ	countDown,0
+showScore:	bgn#	1
+	psha	
+	pshx
+	lda#	6
+	sta !	countDown
+	lda#	5
+	outb	crt_yreg
+	lda#	9
+	outb	crt_xreg
+	psh#	scoreLen
+	psh#	scorePrompt
+	jsr	put_str
+	ads#	2
+	lda* !	showSc
+	jsr	$e00
+	cma#	6
+	jne	normalRun
+	lda#	0
+	sta	timer
+	lda#	4
+	outb	crt_yreg
+	lda#	19
+	outb	crt_xreg
+	psh#	winLen
+	psh#	winPrompt
+	jsr	put_str
+	ads#	2
+	jmp	prntGOver
+normalRun:	lda#	4
+	outb	crt_yreg
+	lda#	9
+	outb	crt_xreg
+	psh#	livesLen
+	psh#	livesPrompt
+	jsr	put_str
+	ads#	2
+	lda* !	showLives
+	jsr	$e00
+	cma#	0
+	jne	showRet
+prntGOver:	lda#	6
+	outb	crt_yreg
+	lda#	9
+	outb	crt_xreg
+	psh#	gameLen
+	psh#	gamePrompt
+	jsr	put_str
+	ads#	2
+	lda#	0
+	sta	timer
+	jmp	showEnd
+showRet:	ldx#	1800
+showloop:	txa
+	cma#	0
+	jeq	showCont
+	mod#	300
+	cma#	0
+	jeq	countDownPrnt
+	jmp	showLoopEnd
+countDownPrnt:	lda#	6
+	outb	crt_yreg
+	lda#	9
+	outb	crt_xreg
+	psh#	countDownLen
+	psh#	countPrompt
+	jsr	put_str
+	ads#	2
+	dec !	countDown
+	lda !	countDown
+	jsr	$e00
+	lda#	0
+	outb	crt_xreg
+showLoopEnd:	sbx#	1	
+	jmp	showLoop
+showCont:	
+clrBot:	ldx#	1
+clrBotLoop:	txa
+	cma#	37
+	jeq	showCont2
+	psha	
+	psh#	bottom
+	psh#	' '
+	jsr	putChar
+	ads#	3
+	adx#	1
+	jmp	clrBotLoop
+showCont2:	lda#	5
+	outb	crt_yreg
+	lda#	9
+	outb	crt_xreg
+	psh#	spaceLen
+	psh#	space
+	jsr	put_str
+	ads#	2
+	lda#	4
+	outb	crt_yreg
+	lda#	9
+	outb	crt_xreg
+	psh#	spaceLen
+	psh#	space
+	jsr	put_str
+	ads#	2
+	lda#	6
+	outb	crt_yreg
+	lda#	9
+	outb	crt_xreg
+	psh#	spaceLen
+	psh#	space
+	jsr	put_str
+	ads#	2
+	lda#	1
+	sta	timer
+showEnd:	popx
+	popa
+	fin#	1
+	rtn
+
+
+;int random(int max) leaves result in acc
+	.equ	random2Max,2
+random2:	bgn# 	0
+	pshx
+	lda#	seed
+	mul#	2779
+	ada#	1997
+	mod#	2048
+	sta	seed
+	inc !	random2Max
+	mod !	random2Max
+	popx
+	fin#	0
+	rtn
+
+;void showPaddle(int x, char letter)
+	.equ 	showPaddleX,3
+	.equ	showPaddleLetter,2
+showPaddle:	bgn#	0
+	psha
+	pshx
+	lda#	0
+	outb	crt_xreg
+	lda !	showPaddleX
+	outb	crt_xreg
+	lda#  	14
+	outb	crt_yreg
+	lda !	showPaddleLetter	
+	outb	crt_data
+	lda !	showPaddleX
+	ada#	1
+	outb	crt_xreg
+	lda !	showPaddleLetter	
+	outb	crt_data
+	lda !	showPaddleX
+	ada#	2
+	outb	crt_xreg
+	lda !	showPaddleLetter	
+	outb	crt_data
+	lda !	showPaddleX
+	ada#	3
+	outb	crt_xreg
+	lda !	showPaddleLetter	
+	outb	crt_data
+	lda#	0
+	outb	crt_xreg
+	popx
+	popa
+	fin#	0
+	rtn
+
+;void showIntro()
+showIntro:	bgn#	0
+	psha
+	pshx
+	clr	fX1
+	clr	fX2
+	clr	fX3
+	clr	fX4
+	clr	fX5
+	clr	fX6
+	clr	paddleFlag
+	lda#	clear_display
+	outb	crt_cntl
+	psh#	intro1Len
+	psh#	intro1
+	jsr	put_str
+	ads#	2
+	jsr	put_nl
+	psh#	intro2Len
+	psh#	intro2
+	jsr	put_str
+	ads#	2
+	psh#	intro3Len
+	psh#	intro3
+	jsr	put_str
+	ads#	2
+	psh#	intro4Len
+	psh#	intro4
+	jsr	put_str
+	ads#	2
+	psh#	intro5Len
+	psh#	intro5
+	jsr	put_str
+	ads#	2
+	psh#	intro6Len
+	psh#	intro6
+	jsr	put_str
+	ads#	2
+	psh#	intro7Len
+	psh#	intro7
+	jsr	put_str
+	ads#	2
+	psh#	intro8Len
+	psh#	intro8
+	jsr	put_str
+	ads#	2
+	psh#	intro9Len
+	psh#	intro9
+	jsr	put_str
+	ads#	2
+	psh#	intro10Len
+	psh#	intro10
+	jsr	put_str
+	ads#	2
+	psh#	intro11Len
+	psh#	intro11
+	jsr	put_str
+	ads#	2
+	jsr	put_nl
+	lda#	0
+	outb	crt_xreg
+	lda#	kbd_flush
+	outb	kbd_cntl
+showIntro2:	inb	kbd_stat
+	jeq	showIntro2
+	inb	kbd_data
+	cma#	start
+	jne	showIntro2
+	lda#	bell
+	outb	crt_data
+	popx
+	popa
+	fin#	0
+	rtn	;showIntro()
+
+;void clearCRT()
+	.equ	clearCRTi,1
+	.equ	clearCRTj,0
+clearCRT:	bgn#	2
+	psha
+	pshx
+	lda#	clear_display
+	outb	crt_cntl
+	lda#	1
+	outb	crt_yreg
+	lda#	1
+	outb	crt_xreg
+	psh#	blocksLen
+	psh#	blocks	
+	jsr	put_str	;mvadstr(0,0,blocks)
+	ads#	2
+	lda#	2
+	sta !	clearCRTj
+	lda#	1
+	sta !	clearCRTi
+clearCRT1:	lda !	clearCRTi
+	cma#	14
+	jeq	clearCRT3
+	psh#	0
+	psha	 
+	psh#	vertical_line
+	jsr	putChar
+	ads#	3
+	psh#	max_right
+	psha	 
+	psh#	vertical_line
+	jsr	putChar
+	ads#	3
+	inc !	clearCRTi
+	jmp	clearCRT1
+clearCRT3:	psh#	0
+	psh#	bottom
+	psh#	vertical_line
+	jsr	putChar
+	ads#	3
+	psh#	max_right
+	psh#	bottom
+	psh#	vertical_line
+	jsr	putChar
+	ads#	3
+	popx
+	popa
+	fin#	2
+	rtn		;clearCrt
+
+;void startGame();
+	.equ	startBallx,8
+	.equ	startBally,7
+	.equ	startPadx,6
+	.equ	startDx,5
+	.equ	startDy,4
+	.equ	startScore,3
+	.equ	startTemp,0
+startGame:	bgn#	1
+	psha
+	pshx
+	lda* !	startScore
+	mod	6
+	cma#	0
+	jne	start2
+	jsr	clearCRT
+	jmp	start3
+start2:	lda#	8
+	outb	crt_yreg
+	lda#	4
+	outb	crt_xreg
+	psh#	spaceLen
+	psh#	space
+	jsr	put_str
+	ads#	2
+	lda#	9
+	outb	crt_yreg
+	lda#	4
+	outb	crt_xreg
+	psh#	spaceLen
+	psh#	space
+	jsr	put_str
+	ads#	2
+	lda#	bottom
+	outb	crt_yreg
+	lda#	1
+	outb	crt_xreg
+	psh#	spacePromptLen
+	psh#	spacePrompt
+	jsr	put_str
+	ads#	2
+start3:	lda#	max_right	
+	div# 	2
+	sba#	4
+	sta !	startTemp	
+	psh#	20
+	jsr	random2
+	ads#	1
+	ada !	startTemp
+	sta* !	startBallx
+	lda#	2
+	sta* !	startBally
+	lda#	1
+	sta* !	startDy
+	psh#	2
+	jsr	random2
+	ads#	1
+	mul#	3
+	sta !	startTemp
+	lda* !	startScore
+	ada#	1
+	sba !	startTemp
+	sta* !	startDx
+	lda#	max_right
+	div#	2
+	sba#	2
+	sta* !	startPadx
+	psh* !	startPadx
+	psh#	horizontal_line
+	jsr	showPaddle
+	ads#	2
+	lda#	2
+	sta	timer
+	popx
+	popa
+	fin#	1
+	rtn		;startGame
+
+;void movePaddle(char key, int * x)
+	.equ	movePdKey,3
+	.equ	movePdX,2
+movePaddle:	bgn#	0
+	psha	
+	pshx
+	psh* !	movePDX
+	psh#	' '
+	jsr	showPaddle
+	ads#	2
+moveLeft:	lda !	movePdKey
+	cma#	left_arrow
+	jne	moveRight
+	lda	paddleFlag
+	cma#	100
+	jeq	altLeft
+	lda* !	movePdX
+	cma#	2
+	jle	moveShowPaddle
+	sba#	2
+	sta* !	movePdX
+	jmp	moveShowPaddle
+altLeft:	lda* !	movePdX
+	cma#	33
+	jge	moveShowPaddle
+	ada#	2
+	sta* !	movePdX
+	jmp	moveShowPaddle
+moveRight:	cma#	right_arrow
+	jne	moveShowPaddle
+	lda	paddleFlag
+	cma#	100
+	jeq	altRight
+	lda* !	movePdX
+	cma#	33
+	jge	moveShowPaddle
+	ada#	2
+	sta* !	movePdX
+	jmp	moveShowPaddle
+altRight:	lda* !	movePdX
+	cma#	2
+	jle	moveShowPaddle
+	sba#	2
+	sta* !	movePdX
+moveShowPaddle:psh* !	movePdX
+	psh#	horizontal_line
+	jsr	showPaddle
+	ads#	2
+	popx
+	popa
+	fin#	0
+	rtn		;movePaddle
+
+;keyISR
+keyISR:	psha
+	lda#	0
+	outb	kbd_cntl
+	inb	kbd_data
+	cma#	quit
+	jne	key1
+	hlt
+key1:	cma#	$1b
+	jne	keydone
+key2:	inb	kbd_data
+	cma#	left_arrow
+	jeq	key3
+	cma#	right_arrow
+	jeq	key3
+	jne	keydone
+key3:	psha
+	psh#	paddleX
+	jsr	movePaddle
+	ads#	2
+keydone:	lda#	interrupt_ena
+	outb	kbd_cntl
+	popa
+	irtn		;keyIsr
+
+;int play(int paddlex, int hitbox 1-6, int *score, int *ballX, int *ballY, int *deltaX, int *deltaY,int *lives)
+	.equ	playPadx,17
+	.equ	hitBox1,16
+	.equ	hitBox2,15
+	.equ	hitBox3,14
+	.equ	hitBox4,13
+	.equ	hitBox5,12
+	.equ	hitBox6,11
+	.equ	playScore,10
+	.equ	playBallx,9
+	.equ	playBally,8
+	.equ	playDx,7
+	.equ	playDy,6
+	.equ	playLives,5
+	.equ	squareTemp,2
+	.equ	playSquare,1
+	.equ	playI,0
+play:	bgn#	3
+	psha
+	pshx
+	psh* !	playBallx
+	psh* !	playBally
+	psh#	' '
+	jsr	putChar
+	ads#	3
+	ldx#	0
+	psh !	playPadx
+	psh !	playBallx
+	psh !	playBally
+	psh !	playDx
+	psh !	playDy
+	jsr	newBallPos
+	ads#	5
+playIf:	lda* !	playBally
+	cma#	0
+	jne	noHit
+	inc* !	playBally
+	jmp	x6
+playLoop1:	lda#	1
+	outb	crt_yreg
+	lda#	2
+	outb	crt_xreg
+	psh#	x1Len
+	psh#	x1in	
+	jsr	put_str	
+	ads#	2
+	inc* !	hitbox1
+	lda* !	hitbox1
+	cma#	1
+	jne	ret2
+	lda#	100
+	ada	paddleFlag
+	sta	paddleFlag
+	inc* !	playScore
+	lda#	13
+	outb	crt_yreg
+	lda#	30
+	outb	crt_xreg
+	psh#	scoreLen
+	psh#	scorePrompt
+	jsr	put_str
+	ads#	2
+	lda* !	playScore
+	jsr	$e00
+	cma#	6
+	jeq	ret3
+	jmp	ret2
+x2:	lda* !	playBallx
+	cma#	7
+	jle	playLoop1
+	lda#	1
+	outb	crt_yreg
+	lda#	8
+	outb	crt_xreg
+	psh#	x1Len
+	psh#	x1in	
+	jsr	put_str	
+	ads#	2
+	inc* !	hitbox2
+	lda* !	hitbox2
+	cma#	1
+	jne	ret2
+	inc* !	playScore
+	lda#	13
+	outb	crt_yreg
+	lda#	30
+	outb	crt_xreg
+	psh#	scoreLen
+	psh#	scorePrompt
+	jsr	put_str
+	ads#	2
+	lda* !	playScore
+	jsr	$e00
+	cma#	6
+	jeq	ret3
+	jmp	ret2
+x3:	lda* !	playBallx
+	cma#	13
+	jle	x2
+	lda#	1
+	outb	crt_yreg
+	lda#	14
+	outb	crt_xreg
+	psh#	x1Len
+	psh#	x1in	
+	jsr	put_str	
+	ads#	2
+	inc* !	hitbox3
+	lda* !	hitbox3
+	cma#	1
+	jne	ret2
+	inc* !	playScore
+	lda#	13
+	outb	crt_yreg
+	lda#	30
+	outb	crt_xreg
+	psh#	scoreLen
+	psh#	scorePrompt
+	jsr	put_str
+	ads#	2
+	lda* !	playScore
+	jsr	$e00
+	cma#	6
+	jeq	ret3
+	jmp	ret2
+x4:	lda* !	playBallx
+	cma#	19
+	jle	x3
+	lda#	1
+	outb	crt_yreg
+	lda#	20
+	outb	crt_xreg
+	psh#	x1Len
+	psh#	x1in	
+	jsr	put_str	
+	ads#	2
+	inc* !	hitbox4
+	lda* !	hitbox4
+	cma#	1
+	jne	ret2
+	inc* !	playScore
+	lda#	13
+	outb	crt_yreg
+	lda#	30
+	outb	crt_xreg
+	psh#	scoreLen
+	psh#	scorePrompt
+	jsr	put_str
+	ads#	2
+	lda* !	playScore
+	jsr	$e00
+	cma#	6
+	jeq	ret3
+	jmp	ret2
+x5:	lda* !	playBallx
+	cma#	25
+	jle	x4
+	lda#	1
+	outb	crt_yreg
+	lda#	26
+	outb	crt_xreg
+	psh#	x1Len
+	psh#	x1in	
+	jsr	put_str	
+	ads#	2
+	inc* !	hitbox5
+	lda* !	hitbox5
+	cma#	1
+	jne	ret2
+	inc* !	playScore
+	lda#	13
+	outb	crt_yreg
+	lda#	30
+	outb	crt_xreg
+	psh#	scoreLen
+	psh#	scorePrompt
+	jsr	put_str
+	ads#	2
+	lda* !	playScore
+	jsr	$e00
+	cma#	6
+	jeq	ret3
+	jmp	ret2
+x6:	lda* !	playBallx
+	cma#	31
+	jle	x5
+	lda#	1
+	outb	crt_yreg
+	lda#	32
+	outb	crt_xreg
+	psh#	x1Len
+	psh#	x1in	
+	jsr	put_str	
+	ads#	2
+	inc* !	hitbox6
+	lda* !	hitbox6
+	cma#	1
+	jne	ret2
+	inc* !	playScore
+	lda#	13
+	outb	crt_yreg
+	lda#	30
+	outb	crt_xreg
+	psh#	scoreLen
+	psh#	scorePrompt
+	jsr	put_str
+	ads#	2
+	lda* !	playScore
+	jsr	$e00
+	cma#	6
+	jeq	ret3
+	jmp	ret2
+ret3:	lda#	3
+	sta	timer
+	jmp	playDone
+nohit:	lda* !	playBally
+	cma#	bottom
+	jge	play3	
+	jmp	ret2
+play3:	dec* !	playLives
+	jmp	ret3
+ret2:	lda#	2
+	sta	timer
+playDone:	psh* !	playBallx
+	psh* !	playBally
+	psh#	'O'
+	jsr	putChar
+	ads#	3
+	popx
+	popa
+	fin#	3
+	rtn		;play
+
+	
+;void getNewBallPosition(int paddlex, int *ballX, int *ballY, int *deltaX, int *deltaY)
+	.equ	newPadx,7
+	.equ	newBallx,6
+	.equ	newBally,5
+	.equ	newDx,4
+	.equ	newDy,3
+	.equ	newSquare,0
+NewBallPos:	bgn#	1
+	psha
+	pshx
+	lda#	0
+	outb	crt_xreg
+	lda* !	newBally
+	ada* !	newDy
+	sta* !	newBally
+	lda* !	newBallx
+	ada* !	newDx
+	sta* !	newBallx
+	cma#	2
+	jge	xNotZero
+	lda#	2
+	sta* !	newBallx
+	neg* !	newDx
+	jmp	checkYaxis
+xNotZero:	lda* !	newBallx
+	cma#	max_right
+	jlt	checkYaxis
+	lda#	max_right
+	sba#	1
+	sta* !	newBallx
+	neg* !	newDx
+checkYaxis:	lda* !	newBally
+	cma#	bottom
+	jne	elseY
+	ldx#	0
+newBallLoop:	txa
+	sba#	1
+	cma#	3
+	jeq	elseY
+	ada !	newPadx
+	cma* !	newBallx
+	jeq	endBallLoop
+	adx#	1
+	jmp	newBallLoop
+endBallLoop:	lda#	bottom
+	sba#	1
+	sta* !	newBally
+	neg* !	newDy
+	jmp	newDone
+elseY:	lda* !	newBally
+	cma#	0
+	jne	newDone
+	lda#	0
+	sta* !	newBally
+	neg* !	newDy	
+newDone:	popx
+	popa
+	fin#	1
+	rtn		;ballPos
+
+
+;timerISR
+TimerIsr:	bgn#	0
+	psha
+	pshx
+	lda	timer
+	cma#	start_cnt
+	jeq	timerStart
+	cma#	death_delay
+	jeq	timer2
+	cma#	move_ball
+	jeq	timer1
+	cma#	0
+	jeq	end
+timerStart:	psh#	ballX
+	psh#	ballY
+	psh#	paddleX
+	psh#	deltaX
+	psh#	deltaY
+	psh#	score
+	jsr	startGame
+	ads#	6
+timer1:	psh	paddleX
+	psh#	fX1
+	psh#	fX2
+	psh#	fX3
+	psh#	fX4
+	psh#	fX5
+	psh#	fX6
+	psh#	score
+	psh#	ballX
+	psh#	ballY
+	psh#	deltaX
+	psh#	deltaY
+	psh#	lives
+	jsr	play
+	ads#	13
+	jmp	timer_done
+timer2:	psh#	score
+	psh#	lives
+	jsr	showScore
+	ads#	2
+timer_done:	lda#	enable_and_reset
+	outb	tim_cntl
+	popx
+	popa
+	fin#	0
+	irtn		;timerISR
+end:	hlt
+fX1:	.word	0	
+fX2:	.word	0
+fX3:	.word	0
+fX4:	.word	0
+fX5:	.word	0
+fX6:	.word	0
+seed:	.word	1
+timer:	.word	0
+lives:	.word
+paddleX:	.word
+ballX:	.word
+ballY:	.word
+deltaX:	.word
+deltaY:	.word
+key:	.word	'n'
+score:	.word
+paddleFlag:	.word	
+intro1:	.char	'Breakout Introduction',intro1Len
+intro2:	.char	'Use the arrow keys to move paddle.    ',intro2Len
+intro3:	.char	'The game starts when space is pressed.',intro3Len
+intro4: 	.char	'The game ends when x is pressed, lives',intro4Len
+intro5:	.char	'reaches 0, or all blocks destroyed.   ',intro5Len
+intro6:	.char	'Options:                              ',intro6Len
+intro7:	.char	'1:Score is posted when point earned.  ',intro7Len
+intro8:	.char	'2:Hitting >< block reverses controls. ',intro8Len
+intro9:	.char	'controls will reset to normal on death',intro9Len
+intro10:	.char	'3:Game will countdown on death screen.',intro10Len
+intro11:	.char	'4:Ball starts at non 45 degree angle. ',intro11Len
+blocks:	.char	'||_><_||____||____||____||____||____||',blocksLen
+spacePrompt:	.char	'|                                    |',spacePromptLen
+space:	.char	'            ',spaceLen
+x1in:	.char	'      ',x1Len
+scorePrompt:	.char	'Score: ',scoreLen
+livesPrompt:	.char	'Lives: ',livesLen
+gamePrompt:	.char	'Game Over!',gameLen
+countPrompt:	.char	'CountDown: ',countDownLen
+winPrompt:	.char	'You Win!',winLen
